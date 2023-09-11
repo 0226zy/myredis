@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/0226zy/myredis/pkg/constant"
 )
 
 // tagToindex tag -> field index
@@ -80,6 +82,7 @@ type RedisConfig struct {
 	HashMaxZipMapEntries int  `conf:"hash-max-zipmap-entries"`
 	HashMaxZipMapValue   int  `conf:"hash-max-zipmap-value"`
 	interconf            string
+	DBNum                int
 }
 
 // SaveConf 触发备份的配置
@@ -88,9 +91,11 @@ type SaveConf struct {
 	MinKeys int64
 }
 
+// newRedisConfig 构建RedisConfig 设置默认值
 func newRedisConfig() *RedisConfig {
 	return &RedisConfig{
-		Bind: "127.0.0.1",
+		DBNum: constant.REDIS_DEFAULT_DBNUM,
+		Bind:  "127.0.0.1",
 	}
 }
 
@@ -107,12 +112,22 @@ func PraseFromFile(filename string) *RedisConfig {
 // Unmarshal 解析反射，给配置赋值
 func Unmarshal(data []byte) *RedisConfig {
 
+	loaderr := func(lineNum int, line string, err error) {
+		fmt.Fprintf(os.Stderr, "\n*** FATAL CONFIG FILE ERROR ***\n")
+		fmt.Fprintf(os.Stderr, "Reading the configuration file,at line %d\n", lineNum)
+		fmt.Fprintf(os.Stderr, ">>> %s\n", line)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+
 	redisConfig := newRedisConfig()
 	v := reflect.ValueOf(redisConfig)
 	v = v.Elem()
 	reader := bufio.NewReader(strings.NewReader(string(data)))
 
+	lineNum := 0
 	for {
+		lineNum++
 		line, err := reader.ReadString('\n')
 
 		if err == io.EOF {
@@ -137,13 +152,13 @@ func Unmarshal(data []byte) *RedisConfig {
 		fieldIndex, ok := tagToindex[parts[0]]
 		if !ok {
 			fmt.Printf("find undefine conf key:%s\n", parts[0])
-			panic("find undefine conf key:" + parts[0])
+			loaderr(lineNum, line, errors.New("find undefine conf key:"+parts[0]))
 		}
 		// get filed by index
 		field := v.Field(fieldIndex)
 		err = setField(field, parts[0], parts[1])
 		if err != nil {
-			panic(err)
+			loaderr(lineNum, line, err)
 		}
 
 	}
